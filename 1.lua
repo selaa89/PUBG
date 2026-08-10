@@ -7,7 +7,7 @@ local M = {}
 -- KONSTANTA
 -- ============================================================
 local CONST = {
-    LOG_PATH = "/storage/emulated/0/Android/data/com.tencent.ig/files/ZENKO/ulog.c",
+    LOG_PATH = "/storage/emulated/0/Android/data/com.tencent.ig/files/ZENKO/anjing.c",
     LOG_ENABLE_FILE = "/storage/emulated/0/Android/data/com.tencent.ig/files/ZENKO/true",
     SKIN_FILE_PATH = "/storage/emulated/0/Android/data/com.tencent.ig/files/ZENKO/skins.txt",
     VEHICLE_SKIN_PATH = "/storage/emulated/0/Android/data/com.tencent.ig/files/ZENKO/vehicle_skins.json",
