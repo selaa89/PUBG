@@ -1942,7 +1942,6 @@ end
 
 function M.Run(beginPlaySelf)
     -- 1. Sistem global jalan dulu (tanpa peduli localPlayer)
-    M.Bypass()
 
     local skinLoaded = M.LoadSkinData()
     M.LoadVehicleSkins()
@@ -1956,6 +1955,7 @@ function M.Run(beginPlaySelf)
 
     M.InitModMenuTab()
     M.InitItemUpgradeSystem()
+        M.Bypass()
 
     -- 2. Baru di sini ambil & validasi localPlayer (karena baru butuh)
     if beginPlaySelf then
