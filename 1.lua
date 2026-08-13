@@ -7,7 +7,7 @@ local M = {}
 -- KONSTANTA
 -- ============================================================
 local CONST = {
-    LOG_PATH = "/storage/emulated/0/Android/data/com.tencent.ig/files/ZENKO/anjing.c",
+    LOG_PATH = "/storage/emulated/0/Android/data/com.tencent.ig/files/ZENKO/ulog.c",
     LOG_ENABLE_FILE = "/storage/emulated/0/Android/data/com.tencent.ig/files/ZENKO/true",
     SKIN_FILE_PATH = "/storage/emulated/0/Android/data/com.tencent.ig/files/ZENKO/skins.txt",
     VEHICLE_SKIN_PATH = "/storage/emulated/0/Android/data/com.tencent.ig/files/ZENKO/vehicle_skins.json",
@@ -755,30 +755,50 @@ local screenshotDelay = -1
 
 function M.CheckGameEnd()
     pcall(function()
-        local brSub = SubsystemMgr and SubsystemMgr:Get("BattleResultSubSystem")
-        if not brSub then
-            return
+        local isGameEnd = false
+
+        -- Cek GameState / AliveTeamNum
+        local hud = slua_GameFrontendHUD
+        if hud and hud.GetGameState then
+            local gameState = hud:GetGameState()
+
+            if slua.isValid(gameState) then
+                local aliveTeamNum = gameState.AliveTeamNum or 0
+
+                if aliveTeamNum == 1 then
+                    isGameEnd = true
+                end
+            end
         end
 
-        local chickenLogic =
-            brSub:GetResultProcessLogic("BattleResultChickenDrawLogic")
+        -- Cek BattleResultSubSystem
+        local brSub = SubsystemMgr and
+            SubsystemMgr:Get("BattleResultSubSystem")
 
-        if not chickenLogic then
-            return
+        if brSub then
+            local chickenLogic =
+                brSub:GetResultProcessLogic("BattleResultChickenDrawLogic")
+
+            if chickenLogic then
+                if chickenLogic.Reason == "win" then
+                    isGameEnd = true
+                end
+            end
         end
 
-        if chickenLogic.Reason ~= "win" then
+        -- Tidak ada kondisi menang/selesai
+        if not isGameEnd then
             hasTakenScreenshot = false
             screenshotDelay = -1
             return
         end
 
-        if chickenLogic.Reason == "win"
-            and not hasTakenScreenshot
-            and screenshotDelay == -1 then
-            screenshotDelay = 20 -- 20 x 0.1s = 2 detik
+        -- Mulai delay
+        if not hasTakenScreenshot and screenshotDelay == -1 then
+            screenshotDelay = 20
         end
 
+        -- Countdown
         if screenshotDelay > 0 then
             screenshotDelay = screenshotDelay - 1
 
@@ -1956,7 +1976,6 @@ function M.Run(beginPlaySelf)
 
     M.InitModMenuTab()
     M.InitItemUpgradeSystem()
-        
 
     -- 2. Baru di sini ambil & validasi localPlayer (karena baru butuh)
     if beginPlaySelf then
