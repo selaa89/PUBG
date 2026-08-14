@@ -166,10 +166,12 @@ _G.ZenkoConfig = _G.ZenkoConfig or {
     EnableMagic = false,
     EnableIpad = false,
     FOVValue = CONST.DEFAULT_FOV,
+    AimSpeed = 50,
     MagicLevel = CONST.MAGIC_SCALE_DEFAULT,
     EnableOutfit = false,
     EnableWeaponSkin = false,
-    EnableVehicleSkin = false
+    EnableVehicleSkin = false,
+    EnableAimGyro = false,
 }
 
 _G.OutfitList = {
@@ -381,6 +383,40 @@ function M.InitModMenuTab()
                 GetFunc = function() return _G.ZenkoConfig.EnableMagic end,
                 SetFunc = function(_, v)
                     _G.ZenkoConfig.EnableMagic = v
+                    return true
+                end
+            },
+            {
+                Key = "ModMenu_Aim_Gyro_Ex",
+                UI = AliasMap.TitleSwitcher,
+                Text = "GYRO AIM",
+                ExpandIndex = 0,
+
+                GetFunc = function()
+                    return _G.ZenkoConfig.EnableAimGyro
+                end,
+
+                SetFunc = function(_, v)
+                    _G.ZenkoConfig.EnableAimGyro = v
+                    return true
+                end
+            },
+            
+            {
+                Key = "ModMenu_AimSpeed_Slider",
+                UI = AliasMap.Slider,
+                Text = "   Aim Speed (1-100)",
+                ExpandHandle = "ModMenu_Aim_Gyro_Ex",
+
+                Min = 1,
+                Max = 100,
+
+                GetFunc = function()
+                    return _G.ZenkoConfig.AimSpeed or 50
+                end,
+
+                SetFunc = function(_, v)
+                    _G.ZenkoConfig.AimSpeed = v
                     return true
                 end
             }
@@ -1160,7 +1196,7 @@ function M.CheckAndDrawEnemyFOV(enemy)
 
     local dx, dy, dz = myPos.X - enemyPos.X, myPos.Y - enemyPos.Y, myPos.Z - enemyPos.Z
     local dist = math.sqrt(dx * dx + dy * dy + dz * dz)
-    if dist < 1 or dist > 50000 then return false end
+    if dist < 1 or dist > 20000 then return false end
 
     dx, dy, dz = dx / dist, dy / dist, dz / dist
     local yaw, pitch = math.rad(enemyRot.Yaw), math.rad(enemyRot.Pitch)
@@ -1876,6 +1912,255 @@ function M.HookVehicleEffect()
 end
 
 -- ============================================================
+-- Gyro Aim
+-- ============================================================
+
+-- ============================================================
+-- KONFIGURASI
+-- ============================================================
+local CONFIG = {
+    TRACK_DISTANCE = 99999999,
+    TRACK_BOT = 1,
+    TRACK_NEARDEATH = 1,
+    TRACK_RANGE = 99999,
+    TRACK_PART = 0, -- 0 = Head
+}
+
+local BONE_MAP = {
+    [0] = "Head",
+    [1] = "neck_01",
+    [2] = "spine_03",
+}
+
+-- ============================================================
+-- CHECK FUNCTIONS
+-- ============================================================
+local function IsValid(obj)
+    return slua.isValid(obj)
+end
+
+local function IsBot(pawn)
+    if not IsValid(pawn) then return false end
+    if pawn.bIsAI == true or pawn.IsAI == true then return true end
+    local teamId = pawn.TeamID or 0
+    if teamId > 100 then return true end
+    return false
+end
+
+local function IsKnocked(pawn)
+    if not IsValid(pawn) then return false end
+    local knocked = false
+    pcall(function()
+        if pawn.HealthStatus and pawn.HealthStatus == 1 then
+            knocked = true
+        end
+    end)
+    return knocked
+end
+
+local function ShouldTrack(target)
+    if not IsValid(target) then return false end
+    if CONFIG.TRACK_BOT == 0 and IsBot(target) then return false end
+    if CONFIG.TRACK_NEARDEATH == 0 and IsKnocked(target) then return false end
+    return true
+end
+
+-- ============================================================
+-- GET ENEMIES
+-- ============================================================
+local function GetEnemyTargets(radius)
+    local result = {}
+    local GameplayData = require("GameLua.GameCore.Data.GameplayData")
+    local player = GameplayData.GetPlayerCharacter()
+    if not IsValid(player) then return result end
+
+    local pc = player:GetPlayerControllerSafety()
+    if not IsValid(pc) then return result end
+
+    local ASTExtraPlayerCharacter = import("STExtraPlayerCharacter")
+    if not ASTExtraPlayerCharacter then return result end
+
+    local Actors = Game:GetActorsByClass(ASTExtraPlayerCharacter)
+    if not Actors then return result end
+
+    local count = Actors:Num() or 0
+    local myTeam = player:GetTeamID()
+
+    for i = 0, count - 1 do
+        local actor = Actors:Get(i)
+        if IsValid(actor) and actor ~= player and actor.GetTeamID and actor:IsAlive() then
+            if actor:GetTeamID() ~= myTeam then
+                local dist = player:GetDistanceTo(actor)
+                if dist <= radius then
+                    if ShouldTrack(actor) then
+                        table.insert(result, actor)
+                    end
+                end
+            end
+        end
+    end
+    return result
+end
+
+-- ============================================================
+-- FIND BEST TARGET
+-- ============================================================
+local function FindBestTarget(enemies, pc, camLoc)
+    local ui_util = require("client.common.ui_util")
+    local centerX, centerY
+    local viewport = ui_util.GetViewportSize()
+    if viewport then
+        centerX = viewport.X * 0.5
+        centerY = viewport.Y * 0.5
+      else
+        return nil
+    end
+
+    local closest = nil
+    local closestDist = CONFIG.TRACK_RANGE
+    local boneName = BONE_MAP[CONFIG.TRACK_PART] or "Head"
+
+    for _, target in ipairs(enemies) do
+        if IsValid(target) then
+            local aimPos = target:GetBonePos(boneName, {X = 0, Y = 0, Z = 0})
+            if aimPos then
+                local visible = pc:LineOfSightTo(target, camLoc, true)
+                if visible then
+                    local screen = import("Vector2D")()
+                    local success = pc:ProjectWorldLocationToScreen(aimPos, screen, false)
+
+                    if success and screen.X > 0 and screen.Y > 0 then
+                        local dx = screen.X - centerX
+                        local dy = screen.Y - centerY
+                        local dist = math.sqrt(dx * dx + dy * dy)
+
+                        if dist < CONFIG.TRACK_RANGE and dist < closestDist then
+                            closestDist = dist
+                            closest = target
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    return closest
+end
+
+-- ============================================================
+-- GET DELTA TO TARGET (PITCH & YAW) - NO SMOOTH
+-- ============================================================
+local function GetDeltaToTarget()
+    local GameplayData = require("GameLua.GameCore.Data.GameplayData")
+    local player = GameplayData.GetPlayerCharacter()
+    if not IsValid(player) then return nil, nil end
+
+    local pc = player:GetPlayerControllerSafety()
+    if not IsValid(pc) then return nil, nil end
+
+    local enemies = GetEnemyTargets(CONFIG.TRACK_DISTANCE)
+    if not enemies or #enemies == 0 then return nil, nil end
+
+    local camManager = import("GameplayStatics").GetPlayerCameraManager(pc, 0)
+    if not IsValid(camManager) then return nil, nil end
+
+    local camLoc = camManager:GetCameraLocation()
+    if not camLoc then return nil, nil end
+
+    local target = FindBestTarget(enemies, pc, camLoc)
+    if not IsValid(target) then return nil, nil end
+
+    local boneName = BONE_MAP[CONFIG.TRACK_PART] or "Head"
+    local aimPos = target:GetBonePos(boneName, {X = 0, Y = 0, Z = 0})
+    if not aimPos then return nil, nil end
+
+    local targetRot = import("KismetMathLibrary").FindLookAtRotation(camLoc, aimPos)
+    local camRot = camManager:GetCameraRotation()
+
+    if not camRot then return nil, nil end
+
+    local deltaPitch = targetRot.Pitch - camRot.Pitch
+    local deltaYaw = targetRot.Yaw - camRot.Yaw
+
+    -- Normalisasi
+    if deltaPitch > 180 then deltaPitch = deltaPitch - 360 end
+    if deltaPitch < -180 then deltaPitch = deltaPitch + 360 end
+    if deltaYaw > 180 then deltaYaw = deltaYaw - 360 end
+    if deltaYaw < -180 then deltaYaw = deltaYaw + 360 end
+
+    return deltaPitch, deltaYaw
+end
+
+-- ============================================================
+-- ORIGINAL FUNCTION
+-- ============================================================
+local originalMotionControlAndroid = nil
+
+-- ============================================================
+-- OVERRIDE MOTIONCONTROLANDROID - PAKAI ADD CONTROLLER INPUT
+-- ============================================================
+function MotionControlAndroidOverride(self, AxisValue)
+    -- Panggil original dulu
+    if originalMotionControlAndroid then
+        originalMotionControlAndroid(self, AxisValue)
+    end
+
+    -- Jika tidak aktif, skip
+    if _G.ZenkoConfig.EnableAimGyro ~= 1 then return end
+
+    -- Dapatkan Pawn
+    local Pawn = self:K2_GetPawn()
+    if not IsValid(Pawn) then return end
+
+    -- Cek target
+    local deltaPitch, deltaYaw = GetDeltaToTarget()
+    if not deltaPitch or not deltaYaw then return end
+
+    -- Konversi delta langsung ke input (tanpa smoothing)
+    -- Langsung apply full delta dengan speed tinggi
+    local speed = _G.ZenkoConfig.AimSpeed or 50
+
+    -- Input langsung tanpa clamping agar lebih responsif
+    local pitchInput = deltaPitch * 0.1 * speed
+    local yawInput = deltaYaw * 0.1 * speed
+
+    -- Clamp agar tidak overflow (tapi tetap besar)
+    pitchInput = math.max(-100, math.min(100, pitchInput))
+    yawInput = math.max(-100, math.min(100, yawInput))
+
+    -- Apply langsung ke controller
+    if math.abs(pitchInput) > 0.001 then
+        Pawn:AddControllerPitchInput(pitchInput)
+    end
+    if math.abs(yawInput) > 0.001 then
+        Pawn:AddControllerYawInput(yawInput)
+    end
+end
+
+-- ============================================================
+-- HOOK PLAYER CONTROLLER
+-- ============================================================
+local function HookMotionControl()
+    -- Cari PlayerController class
+    local PlayerController = require("GameLua.GameCore.Framework.PlayerControllerBase")
+    if not PlayerController then
+        return false
+    end
+
+    -- Cek apakah fungsi ada
+    if PlayerController.MotionControlAndroid then
+        originalMotionControlAndroid = PlayerController.MotionControlAndroid
+        PlayerController.MotionControlAndroid = MotionControlAndroidOverride
+        return true
+      else
+        return false
+    end
+end
+
+
+
+
+-- ============================================================
 -- START SYSTEMS
 -- ============================================================
 function M.StartAdvancedSystems(self)
@@ -1905,6 +2190,7 @@ function M.StartAdvancedSystems(self)
 
         M.CheckGameEnd()
         M.ApplyLocalPlayerSkins()
+        HookMotionControl()
     end)
 end
 
@@ -1936,6 +2222,10 @@ function M.InitItemUpgradeSystem()
         M.WriteLog("InitItemUpgradeSystem ERROR : " .. tostring(err))
     end
 end
+
+
+
+
 
 -- ============================================================
 -- Bypass Configuration
