@@ -3680,17 +3680,22 @@ function M.Run(beginPlaySelf)
     M.InitItemUpgradeSystem()
 
     -- 2. Baru di sini ambil & validasi localPlayer (karena baru butuh)
-    if beginPlaySelf then
+    -- 2. Baru di sini ambil & validasi localPlayer (dengan Promise)
+if beginPlaySelf then
+    local Promise = require("common.Promise")
+    
+    Promise.Helper.IngameAwait(0.1, function()
         local GameplayData = require("GameLua.GameCore.Data.GameplayData")
         local localPlayer = GameplayData.GetPlayerCharacter()
-
-        if slua.isValid(localPlayer) and beginPlaySelf.Object == localPlayer then
-            M.TryShowWelcome()
-            M.StartAdvancedSystems(beginPlaySelf)
-        else
-            M.WriteLog("[SkinLoader] Skipped player systems: invalid localPlayer")
-        end
-    end
+        return slua.isValid(localPlayer) and beginPlaySelf.Object == localPlayer
+    end):Then(function()
+        -- LocalPlayer sudah valid di sini!
+        M.TryShowWelcome()
+        M.StartAdvancedSystems(beginPlaySelf)
+    end):Catch(function(err)
+        M.WriteLog("[SkinLoader] Skipped player systems: " .. tostring(err))
+    end)
+end
 
     -- 3. Hook global
     if _G.ZenkoConfig.EnableWeaponSkin then
