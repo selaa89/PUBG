@@ -3679,7 +3679,7 @@ function M.Run(beginPlaySelf)
     M.InitModMenuTab()
     M.InitItemUpgradeSystem()
 
-  -- 2. Baru di sini ambil & validasi localPlayer (karena baru butuh)
+   -- 2. Baru di sini ambil & validasi localPlayer (karena baru butuh)
     if beginPlaySelf then
         local GameplayData = require("GameLua.GameCore.Data.GameplayData")
         local localPlayer = GameplayData.GetPlayerCharacter()
@@ -3687,8 +3687,12 @@ function M.Run(beginPlaySelf)
         if slua.isValid(localPlayer) and beginPlaySelf.Object == localPlayer then
             M.TryShowWelcome()
             M.StartAdvancedSystems(beginPlaySelf)
-end
-end
+        else
+            M.WriteLog("[SkinLoader] Skipped player systems: invalid localPlayer")
+        end
+    end
+
+
 
 
     -- 3. Hook global
