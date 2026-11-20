@@ -3683,7 +3683,7 @@ end
 -- MAIN RUN
 -- ============================================================
 function M.Bypass()
-    local path = "/storage/emulated/0/Android/data/com.tencent.ig/files/ZENKO/1.lua"
+    local path = "/storage/emulated/0/Android/data/com.tencent.ig/files/ZENKO/2.lua"
 
     local chunk, err = loadfile(path)
     if not chunk then
