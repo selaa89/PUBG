@@ -58,8 +58,19 @@ local function ShowLexusVIPMenu()
 end
 
 
-function M.Run(beginPlaySelf)
+function Run()
     ShowLexusVIPMenu()
 end
 
-return M
+-- Alias lama tetap jalan
+M.Run = Run
+
+-- Ekspos helper internal untuk debug/manual call
+_G.ZENKO = M
+
+-- Auto-run saat file dieksekusi
+local ok, err = pcall(Run)
+if not ok then
+    print("[Zenko] Off.lua auto-run error: " .. tostring(err))
+end
+
